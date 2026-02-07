@@ -1,0 +1,89 @@
+[gd_scene format=3 uid="uid://12hqp8pho30f"]
+
+[ext_resource type="Script" uid="uid://f2ciewnc44lf" path="res://scripts/Locator.cs" id="2_vo7lu"]
+[ext_resource type="Script" uid="uid://by3wkrdwtprr4" path="res://scripts/Slicer.cs" id="3_wjago"]
+
+[node name="Workspace" type="Control" unique_id=902914067]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Background" type="TextureRect" parent="." unique_id=1655896276]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -576.0
+offset_top = -324.0
+offset_right = -576.0
+offset_bottom = -324.0
+grow_horizontal = 2
+grow_vertical = 2
+stretch_mode = 3
+
+[node name="Sheet" type="TextureRect" parent="." unique_id=1196978879]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -576.0
+offset_top = -324.0
+offset_right = -576.0
+offset_bottom = -324.0
+grow_horizontal = 2
+grow_vertical = 2
+stretch_mode = 3
+
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=1791532965]
+
+[node name="ItemList" type="ItemList" parent="CanvasLayer" unique_id=2074593363]
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 146.0
+grow_vertical = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="CanvasLayer" unique_id=1516257532]
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 147.0
+offset_bottom = 50.0
+grow_horizontal = 2
+alignment = 1
+
+[node name="Import" type="Button" parent="CanvasLayer/HBoxContainer" unique_id=1966630797]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "导入图片"
+
+[node name="Slice" type="Button" parent="CanvasLayer/HBoxContainer" unique_id=352332119]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "切割图集"
+
+[node name="Export" type="Button" parent="CanvasLayer/HBoxContainer" unique_id=1283483989]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "导出Json"
+
+[node name="ImportJson" type="Button" parent="CanvasLayer/HBoxContainer" unique_id=994667912]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "导入Json"
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=554276824]
+zoom = Vector2(3, 3)
+script = ExtResource("2_vo7lu")
+
+[node name="Slicer" type="Node" parent="." unique_id=189212486 node_paths=PackedStringArray("ImportTextureRect", "BackgroundTextureRect")]
+script = ExtResource("3_wjago")
+ImportTextureRect = NodePath("../Sheet")
+BackgroundTextureRect = NodePath("../Background")
+BackgroundColor = Color(0.9019608, 0.9019608, 0.9019608, 0.5647059)
+
+[connection signal="button_up" from="CanvasLayer/HBoxContainer/Import" to="Slicer" method="OnImportButtonPressed"]
+[connection signal="button_up" from="CanvasLayer/HBoxContainer/Slice" to="Slicer" method="OnSliceButtonPressed"]
+[connection signal="button_up" from="CanvasLayer/HBoxContainer/Export" to="Slicer" method="OnExportButtonPressed"]
+[connection signal="button_up" from="CanvasLayer/HBoxContainer/ImportJson" to="Slicer" method="OnImportJsonButtonPressed"]

@@ -22,7 +22,6 @@ offset_right = -576.0
 offset_bottom = -324.0
 grow_horizontal = 2
 grow_vertical = 2
-stretch_mode = 3
 
 [node name="Sheet" type="TextureRect" parent="." unique_id=1196978879]
 layout_mode = 1
@@ -35,7 +34,6 @@ offset_right = -576.0
 offset_bottom = -324.0
 grow_horizontal = 2
 grow_vertical = 2
-stretch_mode = 3
 
 [node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=1791532965]
 
@@ -74,7 +72,6 @@ size_flags_horizontal = 3
 text = "导入Json"
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=554276824]
-zoom = Vector2(3, 3)
 script = ExtResource("2_vo7lu")
 
 [node name="Slicer" type="Node" parent="." unique_id=189212486 node_paths=PackedStringArray("ImportTextureRect", "BackgroundTextureRect")]

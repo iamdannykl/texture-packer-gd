@@ -98,6 +98,19 @@ public partial class Slicer : Node
             ImportTextureRect = GetTree().CurrentScene?.GetNodeOrNull<TextureRect>("TextureRect");
         }
 
+        // 强制使用Scale模式以避免坐标偏移问题
+        if (ImportTextureRect != null)
+        {
+            ImportTextureRect.StretchMode = TextureRect.StretchModeEnum.Scale;
+            // 使用Nearest过滤以保持像素完美对齐（像Pixelorama一样）
+            ImportTextureRect.TextureFilter = CanvasItem.TextureFilterEnum.Nearest;
+        }
+
+        if (BackgroundTextureRect != null)
+        {
+            BackgroundTextureRect.TextureFilter = CanvasItem.TextureFilterEnum.Nearest;
+        }
+
         EnsurePreviewLayer();
         EnsureFileDialog();
     }
@@ -287,6 +300,8 @@ public partial class Slicer : Node
         // 设置图集
         ImageTexture texture = ImageTexture.CreateFromImage(image);
         ImportTextureRect.Texture = texture;
+        ImportTextureRect.StretchMode = TextureRect.StretchModeEnum.Scale; // 强制Scale模式避免坐标偏移
+        ImportTextureRect.TextureFilter = CanvasItem.TextureFilterEnum.Nearest; // 像素完美渲染
         _currentAtlasPath = atlasPath;
         UpdateBackground(image);
 
@@ -377,6 +392,8 @@ public partial class Slicer : Node
 
         ImageTexture texture = ImageTexture.CreateFromImage(image);
         ImportTextureRect.Texture = texture;
+        ImportTextureRect.StretchMode = TextureRect.StretchModeEnum.Scale; // 强制Scale模式避免坐标偏移
+        ImportTextureRect.TextureFilter = CanvasItem.TextureFilterEnum.Nearest; // 像素完美渲染
         _currentAtlasPath = path;
         UpdateBackground(image);
         ClearPreview();
@@ -394,6 +411,7 @@ public partial class Slicer : Node
         bgImage.Fill(BackgroundColor); // 浅灰色背景
         ImageTexture bgTexture = ImageTexture.CreateFromImage(bgImage);
         BackgroundTextureRect.Texture = bgTexture;
+        BackgroundTextureRect.TextureFilter = CanvasItem.TextureFilterEnum.Nearest; // 像素完美渲染
     }
 
     private void AutoSliceFromTexture()
@@ -696,7 +714,7 @@ public partial class Slicer : Node
                     {
                         _selectedIndex = -1;
                         _dragging = true;
-                        _dragStartLocal = mouseButton.Position;
+                        _dragStartLocal = SnapToTexturePixel(mouseButton.Position);
                         _dragCurrentLocal = _dragStartLocal;
                     }
 
@@ -714,7 +732,7 @@ public partial class Slicer : Node
                     if (_dragging)
                     {
                         _dragging = false;
-                        _dragCurrentLocal = mouseButton.Position;
+                        _dragCurrentLocal = SnapToTexturePixel(mouseButton.Position);
                         if (TryGetTextureRect(_dragStartLocal, _dragCurrentLocal, out Rect2 texRect)
                             && texRect.Size.X >= MinRectSize
                             && texRect.Size.Y >= MinRectSize)
@@ -731,12 +749,13 @@ public partial class Slicer : Node
             }
             else if (@event is InputEventMouseMotion mouseMotion && _dragging)
             {
-                _dragCurrentLocal = mouseMotion.Position;
+                _dragCurrentLocal = SnapToTexturePixel(mouseMotion.Position);
                 QueueRedraw();
             }
             else if (@event is InputEventMouseMotion resizeMotion && _resizing)
             {
-                if (TryGetTexturePoint(resizeMotion.Position, out Vector2 texPoint))
+                Vector2 snappedPos = SnapToTexturePixel(resizeMotion.Position);
+                if (TryGetTexturePoint(snappedPos, out Vector2 texPoint))
                 {
                     Rect2 resized = ApplyResize(_resizeStartRect, texPoint, _resizeHandle, MinRectSize);
                     var sprite = _sprites[_selectedIndex];
@@ -769,16 +788,30 @@ public partial class Slicer : Node
             float zoom = Camera != null ? Camera.Zoom.X : 1f;
             float screenLineWidth = LineWidth / zoom;
 
-            Rect2 drawRect = GetTextureDrawRect(Target, texSize);
-            Vector2 scale = new Vector2(drawRect.Size.X / texSize.X, drawRect.Size.Y / texSize.Y);
+            Rect2 drawRect = AdjustDrawRectForContainer(Target.StretchMode, texSize, Size);
+            // 计算每个纹理像素在屏幕上的大小
+            Vector2 pixelSize = new Vector2(drawRect.Size.X / texSize.X, drawRect.Size.Y / texSize.Y);
 
             for (int i = 0; i < _sprites.Count; i++)
             {
                 var sprite = _sprites[i];
-                Rect2 rect = sprite.Rect;
-                Vector2 pos = drawRect.Position + rect.Position * scale;
-                Vector2 size = rect.Size * scale;
-                Rect2 screenRect = SnapRect(new Rect2(pos, size));
+                Rect2 texRect = sprite.Rect;
+
+                // 纹理坐标（整数像素）映射到屏幕坐标，确保像素对齐
+                // 左上角：将纹理像素坐标映射到最近的屏幕像素
+                float screenX = Mathf.Round(drawRect.Position.X + texRect.Position.X * pixelSize.X);
+                float screenY = Mathf.Round(drawRect.Position.Y + texRect.Position.Y * pixelSize.Y);
+                // 右下角：同样映射并取整
+                float screenRight = Mathf.Round(drawRect.Position.X + (texRect.Position.X + texRect.Size.X) * pixelSize.X);
+                float screenBottom = Mathf.Round(drawRect.Position.Y + (texRect.Position.Y + texRect.Size.Y) * pixelSize.Y);
+
+                Rect2 screenRect = new Rect2(
+                    screenX,
+                    screenY,
+                    screenRight - screenX,
+                    screenBottom - screenY
+                );
+
                 DrawRect(screenRect, PreviewColor, false, screenLineWidth);
 
                 // 只在选中时显示ID（在矩形左上角附近）
@@ -806,7 +839,9 @@ public partial class Slicer : Node
             float screenLineWidth = LineWidth / zoom;
 
             Vector2 texSize = Target.Texture.GetSize();
-            Rect2 drawRect = GetTextureDrawRect(Target, texSize);
+            Rect2 drawRect = AdjustDrawRectForContainer(Target.StretchMode, texSize, Size);
+            // 计算每个纹理像素在屏幕上的大小
+            Vector2 pixelSize = new Vector2(drawRect.Size.X / texSize.X, drawRect.Size.Y / texSize.Y);
             Rect2 localRect = RectFromPoints(_dragStartLocal, _dragCurrentLocal);
 
             Rect2 clipped = localRect.Intersection(drawRect);
@@ -815,7 +850,7 @@ public partial class Slicer : Node
                 return;
             }
 
-            DrawRect(SnapRect(clipped), PreviewColor, false, screenLineWidth);
+            DrawRect(clipped, PreviewColor, false, screenLineWidth);
         }
 
         private void DrawHandles()
@@ -831,11 +866,18 @@ public partial class Slicer : Node
             float screenHandleSize = Mathf.Max(2f, HandlePixels / zoom);
 
             Vector2 texSize = Target.Texture.GetSize();
-            Rect2 drawRect = GetTextureDrawRect(Target, texSize);
-            Vector2 scale = new Vector2(drawRect.Size.X / texSize.X, drawRect.Size.Y / texSize.Y);
+            Rect2 drawRect = AdjustDrawRectForContainer(Target.StretchMode, texSize, Size);
+            // 计算每个纹理像素在屏幕上的大小
+            Vector2 pixelSize = new Vector2(drawRect.Size.X / texSize.X, drawRect.Size.Y / texSize.Y);
 
-            Rect2 rect = _sprites[_selectedIndex].Rect;
-            Rect2 screenRect = new Rect2(drawRect.Position + rect.Position * scale, rect.Size * scale);
+            Rect2 texRect = _sprites[_selectedIndex].Rect;
+            // 精确映射纹理坐标到屏幕坐标
+            float screenX = Mathf.Round(drawRect.Position.X + texRect.Position.X * pixelSize.X);
+            float screenY = Mathf.Round(drawRect.Position.Y + texRect.Position.Y * pixelSize.Y);
+            float screenRight = Mathf.Round(drawRect.Position.X + (texRect.Position.X + texRect.Size.X) * pixelSize.X);
+            float screenBottom = Mathf.Round(drawRect.Position.Y + (texRect.Position.Y + texRect.Size.Y) * pixelSize.Y);
+
+            Rect2 screenRect = new Rect2(screenX, screenY, screenRight - screenX, screenBottom - screenY);
             Vector2 handleSize = new Vector2(screenHandleSize, screenHandleSize);
 
             // 控制点位置：TopLeft, Top, TopRight, Left, Right, BottomLeft, Bottom, BottomRight
@@ -856,20 +898,8 @@ public partial class Slicer : Node
             foreach (Vector2 p in points)
             {
                 Rect2 handleRect = new Rect2(p, handleSize);
-                DrawRect(SnapRect(handleRect), PreviewColor, false, screenLineWidth);
+                DrawRect(handleRect, PreviewColor, false, screenLineWidth);
             }
-        }
-
-        private Rect2 SnapRect(Rect2 rect)
-        {
-            if (!SnapToPixels)
-            {
-                return rect;
-            }
-
-            Vector2 pos = new Vector2(Mathf.Round(rect.Position.X), Mathf.Round(rect.Position.Y));
-            Vector2 size = new Vector2(Mathf.Round(rect.Size.X), Mathf.Round(rect.Size.Y));
-            return new Rect2(pos, size);
         }
 
         private void NotifyRectsChanged()
@@ -970,6 +1000,31 @@ public partial class Slicer : Node
             }
         }
 
+        private Vector2 SnapToTexturePixel(Vector2 screenPos)
+        {
+            if (Target?.Texture == null)
+                return screenPos;
+
+            Vector2 texSize = Target.Texture.GetSize();
+            if (texSize.X <= 0f || texSize.Y <= 0f)
+                return screenPos;
+
+            Rect2 drawRect = AdjustDrawRectForContainer(Target.StretchMode, texSize, Size);
+
+            // 计算每个纹理像素在屏幕上的大小
+            Vector2 pixelSize = new Vector2(
+                drawRect.Size.X / texSize.X,
+                drawRect.Size.Y / texSize.Y
+            );
+
+            // 将屏幕坐标相对于绘制区域的位置对齐到纹理像素网格
+            Vector2 relativePos = screenPos - drawRect.Position;
+            relativePos.X = Mathf.Round(relativePos.X / pixelSize.X) * pixelSize.X;
+            relativePos.Y = Mathf.Round(relativePos.Y / pixelSize.Y) * pixelSize.Y;
+
+            return drawRect.Position + relativePos;
+        }
+
         private bool TryGetTexturePoint(Vector2 localPoint, out Vector2 texPoint)
         {
             texPoint = Vector2.Zero;
@@ -979,7 +1034,9 @@ public partial class Slicer : Node
                 return false;
             }
 
-            Rect2 drawRect = GetTextureDrawRect(Target, texSize);
+            // 使用 SlicePreview 自己的 Size 计算绘制区域
+            Rect2 drawRect = AdjustDrawRectForContainer(Target.StretchMode, texSize, Size);
+
             if (!drawRect.HasPoint(localPoint))
             {
                 return false;
@@ -992,10 +1049,44 @@ public partial class Slicer : Node
             return true;
         }
 
+        private static Rect2 AdjustDrawRectForContainer(TextureRect.StretchModeEnum mode, Vector2 texSize, Vector2 containerSize)
+        {
+            switch (mode)
+            {
+                case TextureRect.StretchModeEnum.Scale:
+                case TextureRect.StretchModeEnum.Tile:
+                    return new Rect2(Vector2.Zero, containerSize);
+                case TextureRect.StretchModeEnum.Keep:
+                    return new Rect2(Vector2.Zero, texSize);
+                case TextureRect.StretchModeEnum.KeepCentered:
+                    {
+                        Vector2 pos = (containerSize - texSize) * 0.5f;
+                        return new Rect2(pos, texSize);
+                    }
+                case TextureRect.StretchModeEnum.KeepAspect:
+                case TextureRect.StretchModeEnum.KeepAspectCentered:
+                case TextureRect.StretchModeEnum.KeepAspectCovered:
+                    {
+                        float scale = (mode == TextureRect.StretchModeEnum.KeepAspectCovered)
+                            ? Mathf.Max(containerSize.X / texSize.X, containerSize.Y / texSize.Y)
+                            : Mathf.Min(containerSize.X / texSize.X, containerSize.Y / texSize.Y);
+
+                        Vector2 size = texSize * scale;
+                        Vector2 pos = mode == TextureRect.StretchModeEnum.KeepAspectCentered
+                            ? (containerSize - size) * 0.5f
+                            : Vector2.Zero;
+
+                        return new Rect2(pos, size);
+                    }
+                default:
+                    return new Rect2(Vector2.Zero, containerSize);
+            }
+        }
+
         private Vector2 GetHandleSizeInTexture()
         {
             Vector2 texSize = Target.Texture.GetSize();
-            Rect2 drawRect = GetTextureDrawRect(Target, texSize);
+            Rect2 drawRect = AdjustDrawRectForContainer(Target.StretchMode, texSize, Size);
             Vector2 scale = new Vector2(drawRect.Size.X / texSize.X, drawRect.Size.Y / texSize.Y);
 
             // 根据camera zoom调整控制点大小，保持屏幕上固定像素，设置最小值
@@ -1041,6 +1132,10 @@ public partial class Slicer : Node
 
         private static Rect2 ApplyResize(Rect2 rect, Vector2 point, ResizeHandle handle, float minSize)
         {
+            // 确保调整点对齐到像素
+            point.X = Mathf.Round(point.X);
+            point.Y = Mathf.Round(point.Y);
+
             float left = rect.Position.X;
             float top = rect.Position.Y;
             float right = rect.Position.X + rect.Size.X;
@@ -1088,7 +1183,7 @@ public partial class Slicer : Node
                 return false;
             }
 
-            Rect2 drawRect = GetTextureDrawRect(Target, texSize);
+            Rect2 drawRect = AdjustDrawRectForContainer(Target.StretchMode, texSize, Size);
             Rect2 localRect = RectFromPoints(localA, localB);
             Rect2 clipped = localRect.Intersection(drawRect);
             if (clipped.Size.X <= 0f || clipped.Size.Y <= 0f)
@@ -1100,12 +1195,20 @@ public partial class Slicer : Node
             Vector2 texPos = (clipped.Position - drawRect.Position) / scale;
             Vector2 texSizeOut = clipped.Size / scale;
 
+            // 由于已经在屏幕空间对齐，这里直接四舍五入即可
+            texPos.X = Mathf.Round(texPos.X);
+            texPos.Y = Mathf.Round(texPos.Y);
+            texSizeOut.X = Mathf.Round(texSizeOut.X);
+            texSizeOut.Y = Mathf.Round(texSizeOut.Y);
+
+            // 确保坐标在纹理范围内
             texPos.X = Mathf.Clamp(texPos.X, 0f, texSize.X);
             texPos.Y = Mathf.Clamp(texPos.Y, 0f, texSize.Y);
-            texSizeOut.X = Mathf.Clamp(texSizeOut.X, 0f, texSize.X - texPos.X);
-            texSizeOut.Y = Mathf.Clamp(texSizeOut.Y, 0f, texSize.Y - texPos.Y);
+            texSizeOut.X = Mathf.Clamp(texSizeOut.X, 1f, texSize.X - texPos.X);
+            texSizeOut.Y = Mathf.Clamp(texSizeOut.Y, 1f, texSize.Y - texPos.Y);
 
             texRect = new Rect2(texPos, texSizeOut);
+
             return texRect.Size.X > 0f && texRect.Size.Y > 0f;
         }
 

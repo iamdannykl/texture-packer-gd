@@ -1019,8 +1019,20 @@ public partial class Slicer : Node
 
             // 将屏幕坐标相对于绘制区域的位置对齐到纹理像素网格
             Vector2 relativePos = screenPos - drawRect.Position;
-            relativePos.X = Mathf.Round(relativePos.X / pixelSize.X) * pixelSize.X;
-            relativePos.Y = Mathf.Round(relativePos.Y / pixelSize.Y) * pixelSize.Y;
+
+            // 计算在纹理坐标系中的位置（像素索引）
+            float texX = relativePos.X / pixelSize.X;
+            float texY = relativePos.Y / pixelSize.Y;
+
+            // 限制在有效范围内 [0, texSize - 1]，然后 Round
+            texX = Mathf.Clamp(texX, 0f, texSize.X);
+            texY = Mathf.Clamp(texY, 0f, texSize.Y);
+            texX = Mathf.Round(texX);
+            texY = Mathf.Round(texY);
+
+            // 转换回屏幕坐标
+            relativePos.X = texX * pixelSize.X;
+            relativePos.Y = texY * pixelSize.Y;
 
             return drawRect.Position + relativePos;
         }
